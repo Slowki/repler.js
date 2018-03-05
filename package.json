@@ -1,6 +1,6 @@
 {
   "name": "repler",
-  "version": "0.0.1-alpha.3",
+  "version": "0.0.1-alpha.4",
   "description": "An auto-reloading REPL with Babel support",
   "main": "dist/index.js",
   "scripts": {
@@ -34,7 +34,7 @@
     "chalk": "^2.3.2",
     "chokidar": "^2.0.2",
     "fs-extra": "^5.0.0",
-    "yargs": "^11.0.0"
+    "yargs": "^11.1.0"
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",
