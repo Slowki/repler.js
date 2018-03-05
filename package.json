@@ -1,6 +1,6 @@
 {
   "name": "repler",
-  "version": "0.0.1-alpha.2",
+  "version": "0.0.1-alpha.3",
   "description": "An auto-reloading REPL with Babel support",
   "main": "dist/index.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "dist"
   ],
   "bin": {
-    "repler": "dist/index.js"
+    "repler": "dist/cli.js"
   },
   "keywords": [
     "repl"
@@ -31,6 +31,7 @@
   "dependencies": {
     "babel-core": "^6.26.0",
     "babel-types": "^6.26.0",
+    "babel-preset-env": "^1.6.1",
     "chalk": "^2.3.2",
     "chokidar": "^2.0.2",
     "fs-extra": "^5.0.0",
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",
-    "babel-preset-env": "^1.6.1"
+    "babel-preset-flow": "^6.23.0",
+    "flow-bin": "^0.66.0"
   }
 }
