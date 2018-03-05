@@ -34,58 +34,66 @@ const watchedFiles = new Map();
 const replBindingList = new Map();
 
 
-function createBindingExpression(moduleName, bindingList) {
-    const importIdentifier = t.identifier('__repler_resolve_' + moduleName.replace(/[\/\.-]/g, '_'));
+function createBindingExpression(moduleName, bindingList, ctx, initial = true) {
+    const importIdentifierName = '__repler_resolve_' + moduleName.replace(/[\/\.-]/g, '_');
+    const importIdentifier = t.identifier(importIdentifierName);
+    const exprs = [];
 
-    let exprs = [
+    if (initial) {
+        // TODO check existing global bindings
+        const variablesToDeclare = [importIdentifierName].concat(bindingList.map(([ident, _]) => ident));
+        exprs.push(t.variableDeclaration('let', variablesToDeclare.map(ident => t.variableDeclarator(t.identifier(ident), null))));
+    }
+
+    return exprs.concat([
         t.expressionStatement(t.assignmentExpression('=', importIdentifier, t.callExpression(t.identifier("__replerRequire"), [t.stringLiteral(moduleName), t.identifier('module')])))
-    ].concat(
+    ]).concat(
         bindingList.map(([bindingName, iname]) => t.expressionStatement(t.assignmentExpression('=', t.identifier(bindingName), t.memberExpression(importIdentifier, t.identifier(iname)))))
     );
-
-    return exprs;
 }
 
-function secretSauce() {
-    return {
-        visitor: {
-            ImportDeclaration(babelPath) {
-                const importPath = babelPath.node.source.value;
+function secretSauce(ctx = null) {
+    return function() {
+        return {
+            visitor: {
+                ImportDeclaration(babelPath) {
+                    const importPath = babelPath.node.source.value;
 
-                if (importPath.substr(0, 2) === './' || importPath.substr(0, 3) === '../') {
-                    let filePath = importPath;
-                    let bindingList = new Map();
-                    try {
-                        filePath = vm.runInThisContext(`require.resolve("${importPath}")`);
-                        if (!replBindingList.has(filePath)) {
-                            bindingList = new Map();
-                            replBindingList.set(filePath, bindingList);
-                        } else {
-                            bindingList = replBindingList.get(filePath);
+                    if (importPath.substr(0, 2) === './' || importPath.substr(0, 3) === '../') {
+                        let filePath = importPath;
+                        let bindingList = new Map();
+                        try {
+                            filePath = vm.runInThisContext(`require.resolve("${importPath}")`);
+                            if (!replBindingList.has(filePath)) {
+                                bindingList = new Map();
+                                replBindingList.set(filePath, bindingList);
+                            } else {
+                                bindingList = replBindingList.get(filePath);
+                            }
+                        } catch (e) {
+                            return;
                         }
-                    } catch (e) {
-                        return;
-                    }
 
-                    const importList = [];
-                    const defaultImport = babelPath.node.specifiers.find(x => t.isImportDefaultSpecifier(x));
-                    if (defaultImport) {
-                        importList.push([defaultImport.local.name, 'default']);
-                    }
-                    babelPath.node.specifiers.filter(x => t.isImportSpecifier(x)).forEach(x => importList.push([x.local.name, x.imported.name]));
+                        const importList = [];
+                        const defaultImport = babelPath.node.specifiers.find(x => t.isImportDefaultSpecifier(x));
+                        if (defaultImport) {
+                            importList.push([defaultImport.local.name, 'default']);
+                        }
+                        babelPath.node.specifiers.filter(x => t.isImportSpecifier(x)).forEach(x => importList.push([x.local.name, x.imported.name]));
 
-                    importList.forEach(([bindingName, name]) => bindingList.set(bindingName, name));
-                    babelPath.replaceWithMultiple(createBindingExpression(filePath, importList));
+                        importList.forEach(([bindingName, name]) => bindingList.set(bindingName, name));
+                        babelPath.replaceWithMultiple(createBindingExpression(filePath, importList, ctx));
 
-                    // TODO only watch file if it's a top level import, and figure out the dependency chain
-                    if (filePath !== null && !watchedFiles.has(filePath)) {
-                        watcher.add(filePath);
-                        watchedFiles.set(filePath, false);
+                        // TODO only watch file if it's a top level import, and figure out the dependency chain
+                        if (filePath !== null && !watchedFiles.has(filePath)) {
+                            watcher.add(filePath);
+                            watchedFiles.set(filePath, false);
+                        }
                     }
                 }
-            }
-        },
-    };
+            },
+        };
+    }
 }
 
 async function init() {
@@ -111,9 +119,7 @@ async function init() {
     }
 
     if (!babelOpts.plugins)
-        babelOpts.plugins = [secretSauce];
-    else
-        babelOpts.plugins.push(secretSauce);
+        babelOpts.plugins = [];
 
     // TODO add .compile command to output babel output
     const replInstance = repl.start({
@@ -121,7 +127,9 @@ async function init() {
         input: process.stdin, // TODO intercept stdin and listen for Ctrl-R for backwards search
         output: process.stdout,
         eval: replEval,
-        useGlobal: true
+        ignoreUndefined: true,
+        useGlobal: true,
+        replMode: repl.REPL_MODE_SLOPPY
     });
 
     replInstance.context.__replerRequire = function(modulePath, callingModule) {
@@ -131,15 +139,14 @@ async function init() {
 
             const script = fs.readFileSync(modulePath, 'utf-8');
             const transformed = compile(script, modulePath);
-
             const newModule = new Module(modulePath, callingModule);
-            newModule.paths = require.resolve.paths(modulePath);
+            newModule.paths = Module._nodeModulePaths(path.dirname(modulePath));
             newModule.filename = modulePath;
             require.cache[modulePath] = newModule;
             newModule._compile(transformed.code, modulePath);
         }
 
-        const module = require(modulePath);
+        const module = callingModule.require(modulePath);
         if (module && module.__esModule) {
             return module;
         } else {
@@ -153,18 +160,21 @@ async function init() {
         watchedFiles.clear();
     });
 
-    function compile(code, filename) {
+    function compile(code, filename, context = {}) {
         return babel.transform(code, {
             filename,
             presets: babelOpts.presets,
-            plugins: babelOpts.plugins
+            plugins: babelOpts.plugins.concat(secretSauce(context))
         });
     }
 
     function replEval(code, context, filename, callback) {
         let result;
         try {
-            const transformed = compile(code, filename);
+            const transformed = compile(code, filename, context);
+            // console.log('--------------');
+            // console.log(transformed.code);
+            // console.log('--------------');
             result = vm.runInThisContext(transformed.code, { filename });
         } catch (e) {
             return callback(e);
@@ -187,7 +197,7 @@ async function init() {
             const absPath = path.resolve(filePath);
             watchedFiles.set(absPath, true);
             const bindings = Array.from(replBindingList.get(absPath).entries());
-            const ast = t.program(createBindingExpression(absPath, Array.from(replBindingList.get(absPath).entries())), []);
+            const ast = t.program(createBindingExpression(absPath, Array.from(replBindingList.get(absPath).entries()), global, false), []);
 
             let source;
             if (bindings.length == 0) {
