@@ -17,6 +17,7 @@ function replerPlugin(compiler : BabelCompiler, repl : ?REPL) {
                     if (importPath.substr(0, 2) === './' || importPath.substr(0, 3) === '../') {
                         let filePath = importPath;
                         try {
+                            // TODO improve
                             filePath = vm.runInThisContext(`require.resolve("${importPath}")`);
                         } catch (e) {
                             return;
@@ -27,9 +28,33 @@ function replerPlugin(compiler : BabelCompiler, repl : ?REPL) {
                         if (defaultImport) {
                             importList.push([defaultImport.local.name, 'default']);
                         }
+
+                        const namespaceImport = babelPath.node.specifiers.find(x => t.isImportNamespaceSpecifier(x));
+                        if (namespaceImport) {
+                            importList.push([namespaceImport.local.name, '*']);
+                        }
+
                         babelPath.node.specifiers.filter(x => t.isImportSpecifier(x)).forEach(x => importList.push([x.local.name, x.imported.name]));
 
-                        babelPath.replaceWithMultiple(compiler.createImportExpression(filePath, importList));
+                        const importIdentifierName = compiler.importIdentifierFromModulePath(filePath);
+                        const importIdentifier = t.identifier(importIdentifierName);
+
+                        const statements = [
+                            t.variableDeclaration('let', [t.variableDeclarator(importIdentifier, t.callExpression(t.identifier("__replerRequire"), [t.stringLiteral(filePath), t.identifier('module')]))])
+                        ];
+
+                        if (importList.length > 0) {
+                            statements.push(
+                                t.variableDeclaration('let', importList.map(([bindingName, iname]) => {
+                                    if (iname !== '*')
+                                        return t.variableDeclarator(t.identifier(bindingName), t.memberExpression(importIdentifier, t.identifier(iname)));
+                                    else
+                                        return t.variableDeclarator(t.identifier(bindingName), importIdentifier);
+                                }))
+                            );
+                        }
+
+                        babelPath.replaceWithMultiple(statements);
 
                         if (repl != null) {
                             let bindingList : Map<string, string> = new Map();
@@ -63,16 +88,5 @@ export default class BabelCompiler extends Compiler {
             presets: this.babelOpts.presets,
             plugins: this.babelOpts.plugins.concat(replerPlugin(this, repl))
         });
-    }
-
-    createImportExpression(moduleName : string, bindingList : [string, string][]) : mixed {
-        const importIdentifierName = this.importIdentifierFromModulePath(moduleName);
-        const importIdentifier = t.identifier(importIdentifierName);
-
-        return [
-            t.variableDeclaration('let', [t.variableDeclarator(importIdentifier, t.callExpression(t.identifier("__replerRequire"), [t.stringLiteral(moduleName), t.identifier('module')]))])
-        ].concat(
-            t.variableDeclaration('let', bindingList.map(([bindingName, iname]) => t.variableDeclarator(t.identifier(bindingName), t.memberExpression(importIdentifier, t.identifier(iname)))))
-        );
     }
 }

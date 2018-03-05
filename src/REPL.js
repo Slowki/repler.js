@@ -86,7 +86,12 @@ export default class REPL {
                 const reloadExprs = [
                     `${importIdentifierName} = __replerRequire(${JSON.stringify(absPath)}, module)`
                 ].concat(
-                    Array.from((this.replBindingList.get(absPath) : any).entries()).map(([bindingName, iname]) => `${bindingName} = ${importIdentifierName}.${iname}`)
+                    Array.from((this.replBindingList.get(absPath) : any).entries()).map(([bindingName, iname]) => {
+                        if (iname !== '*')
+                            return `${bindingName} = ${importIdentifierName}.${iname}`;
+                        else
+                            return `${bindingName} = ${importIdentifierName}`;
+                    })
                 );
 
 
@@ -139,6 +144,9 @@ export default class REPL {
     // Private  Methods //
     _eval({ code }: CompileResult, context: vm$Context, filename : string) : Promise<mixed> {
         try {
+            // console.log('---- DEBUG ----');
+            // console.log(code);
+            // console.log('---- END DEBUG ----');
             // TODO source map support
             return Promise.resolve(vm.runInThisContext(code, { filename }));
         } catch (e) {
@@ -151,11 +159,11 @@ export default class REPL {
         try {
             const compileResult = this.compiler.compile(this, code, context, filename);
             this.evalFunction(compileResult, context, filename)
-                        .then(result => callback(undefined, result))
-                        .catch(err => {
-                            console.error(err);
-                            callback(err, null);
-                        });
+                .then(result => callback(undefined, result))
+                .catch(err => {
+                    console.error(err);
+                    callback(err, null);
+                });
         } catch (e) {
             console.error(e);
             return callback(e, null);
