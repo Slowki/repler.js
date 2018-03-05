@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import yargs from 'yargs';
 import chokidar from 'chokidar';
 import chalk from 'chalk';
-import * as babel from "@babel/core";
-import * as t from '@babel/types';
 import fsExtra from 'fs-extra';
+import * as babel from 'babel-core';
+import * as t from 'babel-types';
+import yargs from 'yargs';
 
 import repl from 'repl';
 import path from 'path';
