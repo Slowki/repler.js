@@ -1,6 +1,6 @@
 {
   "name": "repler",
-  "version": "0.0.2-0",
+  "version": "0.0.1-alpha",
   "description": "An auto-reloading REPL with Babel support",
   "main": "dist/index.js",
   "scripts": {
