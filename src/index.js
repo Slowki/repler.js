@@ -134,9 +134,9 @@ async function init() {
 
             const newModule = new Module(modulePath, callingModule);
             newModule.paths = require.resolve.paths(modulePath);
-            newModule._compile(transformed.code, modulePath);
             newModule.filename = modulePath;
             require.cache[modulePath] = newModule;
+            newModule._compile(transformed.code, modulePath);
         }
 
         const module = require(modulePath);
@@ -187,7 +187,7 @@ async function init() {
             const absPath = path.resolve(filePath);
             watchedFiles.set(absPath, true);
             const bindings = Array.from(replBindingList.get(absPath).entries());
-            const ast = t.program(createBindingExpression(absPath, Array.from(replBindingList.get(absPath).entries())), [], "module");
+            const ast = t.program(createBindingExpression(absPath, Array.from(replBindingList.get(absPath).entries())), []);
 
             let source;
             if (bindings.length == 0) {
