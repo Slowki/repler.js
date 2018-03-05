@@ -16,6 +16,9 @@
   "files": [
     "dist"
   ],
+  "bin": {
+    "repler": "dist/index.js"
+  },
   "keywords": [
     "repl"
   ],
