@@ -1,7 +1,5 @@
 //@flow
 import type Compiler, { CompileResult } from './Compiler';
-import * as babel from 'babel-core';
-import * as t from 'babel-types';
 
 import chokidar from 'chokidar';
 import chalk from 'chalk';
@@ -84,13 +82,12 @@ export default class REPL {
 
                 // Create new import expression
                 const importIdentifierName = this.compiler.importIdentifierFromModulePath(absPath);
-                const importIdentifier = t.identifier(importIdentifierName);
 
-                const ast = t.program([
-                    t.expressionStatement(t.assignmentExpression('=', importIdentifier, t.callExpression(t.identifier("__replerRequire"), [t.stringLiteral(absPath), t.identifier('module')])))
+                const reloadExprs = [
+                    `${importIdentifierName} = __replerRequire(${JSON.stringify(absPath)}, module)`
                 ].concat(
-                    Array.from((this.replBindingList.get(absPath) : ast).entries()).map(([bindingName, iname]) => t.expressionStatement(t.assignmentExpression('=', t.identifier(bindingName), t.memberExpression(importIdentifier, t.identifier(iname)))))
-                ));
+                    Array.from((this.replBindingList.get(absPath) : any).entries()).map(([bindingName, iname]) => `${bindingName} = ${importIdentifierName}.${iname}`)
+                );
 
 
                 let source;
@@ -100,11 +97,9 @@ export default class REPL {
                     source = `import {\n${bindings.map(([name, imprt]) => imprt === name ? `    ${name}` : `    ${imprt} as ${name}`).join(',\n')}\n} from "${filePath}";`
                 }
 
-                const transformed = babel.transformFromAst(ast, null, {}).code;
-
                 console.log();
                 console.log(chalk.green(`${filePath} reloading\n${source}`));
-                vm.runInThisContext(transformed);
+                vm.runInThisContext(reloadExprs.join(';\n'));
                 this.replInstance.displayPrompt(true);
             })
             .on('unlink', filePath => {
