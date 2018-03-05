@@ -1,0 +1,37 @@
+{
+  "name": "repler",
+  "version": "0.0.1",
+  "description": "An auto-reloading REPL with Babel support",
+  "main": "dist/index.js",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "babel src --out-dir dist",
+    "build:watch": "npm run build -- -w",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Slowki/repler.js.git"
+  },
+  "keywords": [
+    "repl"
+  ],
+  "author": "Stephan Wolski",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Slowki/repler.js/issues"
+  },
+  "homepage": "https://github.com/Slowki/repler.js#readme",
+  "dependencies": {
+    "@babel/core": "^7.0.0-beta.40",
+    "@babel/types": "^7.0.0-beta.40",
+    "chalk": "^2.3.2",
+    "chokidar": "^2.0.2",
+    "fs-extra": "^5.0.0",
+    "yargs": "^11.0.0"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.0.0-beta.40",
+    "@babel/preset-env": "^7.0.0-beta.40"
+  }
+}
