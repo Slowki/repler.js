@@ -13,6 +13,9 @@
     "type": "git",
     "url": "git+https://github.com/Slowki/repler.js.git"
   },
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "repl"
   ],
