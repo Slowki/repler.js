@@ -36,10 +36,9 @@ export default class REPL {
     compiler : Compiler;
 
     /**
-     * A map from an absolute file path to a file dirty state, true if the file has changed since being require'd
      * @private
      */
-    watchedFiles : Map<string, boolean>;
+    watchedFiles : Set<string>;
 
     /**
      * A map from absolute file path to a map which maps import identifiers to properties of the imported modulePath
@@ -60,7 +59,7 @@ export default class REPL {
             cwd: process.cwd()
         });
 
-        this.watchedFiles = new Map()
+        this.watchedFiles = new Set()
         this.replBindingList = new Map()
 
         const nodeReplOptions = Object.assign({}, options, ({
@@ -70,43 +69,7 @@ export default class REPL {
         (this.replInstance.context : any).__replerRequire = this.__replerRequire.bind(this);
 
         this.watcher
-            .on('change', filePath => {
-                // When a file changes reload the associated bindings in the REPL,
-                // TODO proper dependency tree analysis:
-                //      Traverse the repl module's children creating a set of modules to reload,
-                //      remove those modules from the cache, then reload any removed children
-
-                const absPath = path.resolve(filePath);
-                this.watchedFiles.set(absPath, true);
-                const bindings = Array.from((this.replBindingList.get(absPath) : any).entries());
-
-                // Create new import expression
-                const importIdentifierName = this.compiler.importIdentifierFromModulePath(absPath);
-
-                const reloadExprs = [
-                    `${importIdentifierName} = __replerRequire(${JSON.stringify(absPath)}, module)`
-                ].concat(
-                    Array.from((this.replBindingList.get(absPath) : any).entries()).map(([bindingName, iname]) => {
-                        if (iname !== '*')
-                            return `${bindingName} = ${importIdentifierName}.${iname}`;
-                        else
-                            return `${bindingName} = ${importIdentifierName}`;
-                    })
-                );
-
-
-                let source;
-                if (bindings.length == 0) {
-                    source = `import "${filePath}";`
-                } else {
-                    source = `import {\n${bindings.map(([name, imprt]) => imprt === name ? `    ${name}` : `    ${imprt} as ${name}`).join(',\n')}\n} from "${filePath}";`
-                }
-
-                console.log();
-                console.log(chalk.green(`${filePath} reloading\n${source}`));
-                vm.runInThisContext(reloadExprs.join(';\n'));
-                this.replInstance.displayPrompt(true);
-            })
+            .on('change', this._handleModuleChange.bind(this))
             .on('unlink', filePath => {
                 this.watcher.unwatch(filePath);
                 this.watchedFiles.delete(path.resolve(filePath));
@@ -119,7 +82,7 @@ export default class REPL {
 
         this.replInstance.on('exit', () => this.watcher.close());
         this.replInstance.on('reset', () => {
-            this.watchedFiles.forEach((_, path) => this.watcher.unwatch(path));
+            this.watchedFiles.forEach(path => this.watcher.unwatch(path));
             this.replBindingList.clear();
             this.watchedFiles.clear();
         });
@@ -172,12 +135,11 @@ export default class REPL {
 
     __replerRequire(modulePath : string, callingModule : any) : mixed {
         if (modulePath !== null && !this.watchedFiles.has(modulePath)) {
+            this.watchedFiles.add(modulePath);
             this.watcher.add(modulePath);
-            this.watchedFiles.set(modulePath, true);
         }
 
-        if (this.watchedFiles.get(modulePath) || !require.cache[modulePath]) {
-            this.watchedFiles.set(modulePath, false);
+        if (!require.cache[modulePath]) {
             delete require.cache[modulePath];
 
             if (!modulePath.endsWith('json')) {
@@ -197,5 +159,79 @@ export default class REPL {
         } else {
             return { default: module };
         }
+    }
+
+    _handleModuleChange(filePath : string) {
+        const removedModules = new Set();
+        const absPath = path.resolve(filePath);
+        let previousCacheSize = Object.keys(require.cache);
+
+        // Invalidate the reloaded file
+        removedModules.add(absPath);
+        delete require.cache[absPath];
+
+        // Invalidate everything that depends on the reloaded file
+        while (previousCacheSize !== Object.keys(require.cache)) {
+            previousCacheSize = Object.keys(require.cache);
+
+            const toRemove = [];
+
+            for (const modPath in require.cache) {
+                const mod = require.cache[modPath];
+                for (const child of mod.children) {
+                    if (removedModules.has(child.filename)) {
+                        toRemove.push(modPath);
+                        removedModules.add(modPath);
+                        break;
+                    }
+                }
+            }
+
+            for (const modPath of toRemove) {
+                delete require.cache[modPath];
+            }
+
+            break;
+        }
+
+        // Build the expressions to reload the invalidated modules imported from REPL
+        let source = '';
+        let reloadExprs = [];
+        for (const [fp, bindingsMap] of this.replBindingList.entries()) {
+            // If a module is in the cache then it hasn't changed, so skip it.
+            if (require.cache[fp]) continue;
+
+            const bindings : any = Array.from(bindingsMap.entries());
+
+            // Create new import expressions
+            const importIdentifierName = this.compiler.importIdentifierFromModulePath(fp);
+
+            reloadExprs = reloadExprs.concat([
+                `${importIdentifierName} = __replerRequire(${JSON.stringify(fp)}, module)`
+            ]).concat(
+                bindings.map(([name, imprt]) => {
+                    if (imprt !== '*')
+                        return `${name} = ${importIdentifierName}.${imprt}`;
+                    else
+                        return `${name} = ${importIdentifierName}`;
+                })
+            );
+
+            if (bindings.length == 0) {
+                source += `import "${filePath}";\n`
+            } else {
+                source += `import {\n${bindings.map(([name, imprt]) => imprt === name ? `    ${name}` : `    ${imprt} as ${name}`).join(',\n')}\n} from "${fp}";\n`
+            }
+        }
+
+        // Tell the user things have changed
+        console.log();
+        console.log(chalk.green(`${filePath} changed\n${source}`));
+
+        // Execute the import expressions
+        if (reloadExprs.length > 0)
+            vm.runInThisContext(reloadExprs.join(';\n'));
+
+        this.replInstance.displayPrompt(true);
     }
 }
