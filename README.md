@@ -29,7 +29,6 @@ If you want to install it inside the package you're in:
 * A drop-in replacement for the normal node REPL
 * Support for Babel
 * Automatic reloading when an imported file changes
-* 
 
 ## TODOs ##
 * Source map support
