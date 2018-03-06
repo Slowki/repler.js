@@ -20,7 +20,10 @@
     "repler": "dist/cli.js"
   },
   "keywords": [
-    "repl"
+    "repl",
+    "reload",
+    "hot-reload",
+    "babel"
   ],
   "author": "Stephan Wolski",
   "license": "MIT",
