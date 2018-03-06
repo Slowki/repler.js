@@ -1,6 +1,6 @@
 # Repler #
 
-An auto-reloading REPL with Babel support
+A hot reloading REPL with Babel support
 
 ## Usage ##
 

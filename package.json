@@ -1,7 +1,7 @@
 {
   "name": "repler",
   "version": "0.0.2",
-  "description": "An auto-reloading REPL with Babel support",
+  "description": "A hot reloading REPL with Babel support",
   "main": "dist/index.js",
   "scripts": {
     "clean": "rm -rf dist",
@@ -21,6 +21,7 @@
   },
   "keywords": [
     "repl",
+    "node",
     "reload",
     "hot-reload",
     "babel"
