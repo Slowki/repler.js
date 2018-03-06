@@ -1,14 +1,13 @@
 {
   "name": "repler",
-  "version": "0.0.1-alpha.5",
+  "version": "0.0.2",
   "description": "An auto-reloading REPL with Babel support",
   "main": "dist/index.js",
   "scripts": {
     "clean": "rm -rf dist",
     "build": "babel src --out-dir dist",
     "build:watch": "npm run build -- -w",
-    "prepublishOnly": "npm run clean && npm run build",
-    "publish": "echo TODO"
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "repository": {
     "type": "git",
