@@ -3,6 +3,7 @@ import type Compiler, { CompileResult } from './Compiler';
 
 import chokidar from 'chokidar';
 import chalk from 'chalk';
+import { SourceMapConsumer } from 'source-map';
 
 import fs from 'fs';
 import path from 'path';
@@ -29,6 +30,51 @@ export type REPLOptions = {
     replMode?: (typeof repl.REPL_MODE_SLOPPY | typeof repl.REPL_MODE_STRICT | typeof repl.REPL_MODE_MAGIC);
     breakEvalOnSigint?: boolean;
 };
+
+/**
+ * Overwrite v8's default stack trace string generation
+ */
+Error.prepareStackTrace = function prepareStackTrace(error : any, stack : any[]) : ?string {
+    function formatCallStack(callStack : any) : string {
+        if (callStack.isNative())
+            return callStack.toString();
+
+        const filename = callStack.getFileName();
+        const functionName = callStack.getFunctionName();
+        const methodName = callStack.getMethodName();
+        let sourceMap;
+
+        if (filename !== 'repl') {
+            const loadedModule = require.cache[filename];
+            if (!loadedModule)
+                return callStack.toString();
+
+            sourceMap = loadedModule.__sourceMap;
+        } else {
+            sourceMap = error.__replSourceMap;
+        }
+
+        if (!sourceMap)
+            return callStack.toString();
+
+        const position = sourceMap.originalPositionFor({
+            line: callStack.getLineNumber(),
+            column: callStack.getColumnNumber(),
+            source: callStack.getFileName()
+        });
+
+        let errorString = `${position.source}:${position.line}:${position.column}`;
+        if (functionName && !methodName) {
+            errorString = `${functionName} (${errorString})`;
+        } else if (functionName && methodName) {
+            errorString = `${functionName} as ${methodName} (${errorString})`;
+        }
+
+        return errorString;
+    }
+
+    return chalk.red(error.toString() + stack.map(frame => '\n    at ' + formatCallStack(frame)).join(''));
+}
 
 export default class REPL {
     evalFunction : REPLEvalFunction;
@@ -105,15 +151,21 @@ export default class REPL {
     }
 
     // Private  Methods //
-    _eval({ code }: CompileResult, context: vm$Context, filename : string) : Promise<mixed> {
+    _eval({ code, sourceMap }: CompileResult, context: vm$Context, filename : string) : Promise<mixed> {
         try {
-            // console.log('---- DEBUG ----');
-            // console.log(code);
-            // console.log('---- END DEBUG ----');
-            // TODO source map support
-            return Promise.resolve(vm.runInThisContext(code, { filename }));
+            const result = new vm.Script(code, {
+                filename,
+                displayErrors: false
+            }).runInThisContext({
+                filename,
+                displayErrors: false
+            });
+            return Promise.resolve(result);
         } catch (e) {
-            return Promise.reject(e);
+            return new SourceMapConsumer(sourceMap).then(sourceMap => {
+                e.__replSourceMap = sourceMap;
+                return Promise.reject(e);
+            });
         }
     }
 
@@ -124,11 +176,11 @@ export default class REPL {
             this.evalFunction(compileResult, context, filename)
                 .then(result => callback(undefined, result))
                 .catch(err => {
-                    console.error(err);
+                    err.stack; // Touch the stack so it gets generated
                     callback(err, null);
                 });
         } catch (e) {
-            console.error(e);
+            e.stack; // Touch the stack so it gets generated
             return callback(e, null);
         }
     }
@@ -140,12 +192,17 @@ export default class REPL {
         }
 
         if (!require.cache[modulePath]) {
-            delete require.cache[modulePath];
-
             if (!modulePath.endsWith('json')) {
                 const script = fs.readFileSync(modulePath, 'utf-8');
                 const transformed = this.compiler.compile(null, script, null, modulePath);
                 const newModule = new Module(modulePath, callingModule);
+                if (transformed.sourceMap) {
+                    new SourceMapConsumer(transformed.sourceMap)
+                        .then(sourceMap => {
+                            newModule.__sourceMap = sourceMap;
+                        })
+                        .catch(err => console.warn(chalk.yellow(`Error loading source map for ${modulePath}`)))
+                }
                 newModule.paths = Module._nodeModulePaths(path.dirname(modulePath));
                 newModule.filename = modulePath;
                 require.cache[modulePath] = newModule;
@@ -161,6 +218,22 @@ export default class REPL {
         }
     }
 
+    /**
+     * Remove a module from require.cache and delete the associated source map
+     */
+    _deleteModuleFromCache(module : string) {
+        if (require.cache[module]) {
+            if (require.cache[module].__sourceMap)
+                require.cache[module].__sourceMap.destroy();
+
+            delete require.cache[module];
+        }
+    }
+
+    /**
+     * Handle changes to the file at `filePath`
+     * @arg filePath relative or absolute path to the changed file
+     */
     _handleModuleChange(filePath : string) {
         const removedModules = new Set();
         const absPath = path.resolve(filePath);
@@ -168,7 +241,7 @@ export default class REPL {
 
         // Invalidate the reloaded file
         removedModules.add(absPath);
-        delete require.cache[absPath];
+        this._deleteModuleFromCache(absPath);
 
         // Invalidate everything that depends on the reloaded file
         while (previousCacheSize !== Object.keys(require.cache)) {
@@ -188,7 +261,7 @@ export default class REPL {
             }
 
             for (const modPath of toRemove) {
-                delete require.cache[modPath];
+                this._deleteModuleFromCache(modPath);
             }
 
             break;

@@ -83,10 +83,16 @@ export default class BabelCompiler extends Compiler {
     }
 
     compile(repl : ?REPL, code: string, context: ?vm$Context, filename : string) : CompileResult {
-        return babel.transform(code, {
+        const transformed = babel.transform(code, {
             filename,
+            sourceMaps: true,
             presets: this.babelOpts.presets,
             plugins: this.babelOpts.plugins.concat(replerPlugin(this, repl))
         });
+
+        return {
+            code: transformed.code,
+            sourceMap: transformed.map
+        };
     }
 }

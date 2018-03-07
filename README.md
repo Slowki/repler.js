@@ -11,7 +11,7 @@ If you have it installed globally:
 If you want to install it inside the package you're in:
 
     npx repler # Download repler into node_modules and start the REPL
-   
+
 ### How it Works ###
 `repler` acts like a normal node REPL, with the exception that it supports Babel and automatically reloads files imported using ES2015 import syntax. So if you run something like `import * as foo from './bar'`, every time you change `./bar.js`, the file will be re-imported automagically.
 
@@ -31,7 +31,6 @@ If you want to install it inside the package you're in:
 * Automatic reloading when an imported file changes
 
 ## TODOs ##
-* Source map support
 * Pluggable compilers
 * Documentation searching
 * .compile command
