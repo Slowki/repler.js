@@ -35,19 +35,19 @@ export type REPLOptions = {
  * Overwrite v8's default stack trace string generation
  */
 Error.prepareStackTrace = function prepareStackTrace(error : any, stack : any[]) : ?string {
-    function formatCallStack(callStack : any) : string {
-        if (callStack.isNative())
-            return callStack.toString();
+    function formatCallStack(call : any) : string {
+        if (call.isNative())
+            return call.toString();
 
-        const filename = callStack.getFileName();
-        const functionName = callStack.getFunctionName();
-        const methodName = callStack.getMethodName();
+        const filename = call.getFileName();
+        let functionName = call.getFunctionName();
+        const methodName = call.getMethodName();
         let sourceMap;
 
         if (filename !== 'repl') {
             const loadedModule = require.cache[filename];
             if (!loadedModule)
-                return callStack.toString();
+                return call.toString();
 
             sourceMap = loadedModule.__sourceMap;
         } else {
@@ -55,13 +55,16 @@ Error.prepareStackTrace = function prepareStackTrace(error : any, stack : any[])
         }
 
         if (!sourceMap)
-            return callStack.toString();
+            return call.toString();
 
         const position = sourceMap.originalPositionFor({
-            line: callStack.getLineNumber(),
-            column: callStack.getColumnNumber(),
-            source: callStack.getFileName()
+            line: call.getLineNumber(),
+            column: call.getColumnNumber(),
+            source: call.getFileName()
         });
+
+        if (call.getTypeName() && functionName)
+            functionName = `${call.getTypeName}.${functionName}`;
 
         let errorString = `${position.source}:${position.line}:${position.column}`;
         if (functionName && !methodName) {
@@ -73,7 +76,14 @@ Error.prepareStackTrace = function prepareStackTrace(error : any, stack : any[])
         return errorString;
     }
 
-    return chalk.red(error.toString() + stack.map(frame => '\n    at ' + formatCallStack(frame)).join(''));
+    // Chop off the internal REPL calls, this should be reasonable safe to do...in theory
+    const evalWrapperCallIndex = stack.findIndex(call => call.getTypeName() == 'REPL' && call.getFunctionName() == '_evalWrapper');
+    if (evalWrapperCallIndex !== -1) {
+        stack = stack.slice(0, evalWrapperCallIndex - 2);
+    }
+
+    // Generate Error.stack string
+    return chalk.red(error.toString() + stack.map(call => '\n    at ' + formatCallStack(call)).join(''));
 }
 
 export default class REPL {
