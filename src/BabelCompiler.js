@@ -66,8 +66,13 @@ function replerPlugin(compiler : BabelCompiler, repl : ?REPL) {
                             importList.forEach(([bindingName, name]) => bindingList.set(bindingName, name));
                         }
                     }
+                },
+
+                Program(babelPath) {
+                    // Prevent that annoying "use-strict" print
+                    if (!babelPath.get('body').some(x => x.isExpressionStatement()))
+                        babelPath.pushContainer('body', t.expressionStatement(t.identifier('undefined')));
                 }
-                // TODO fix use strict thing
             },
         };
     }
